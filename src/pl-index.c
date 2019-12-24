@@ -1022,6 +1022,13 @@ deleteClauseBucket(ClauseBucket ch, Clause clause, word key, int is_list)
 }
 
 
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+(*) The  clause  list   may   have   been   marked    as   "dirty"   by
+deleteActiveClauseFromBucket()  even though  it  does  not  contain the
+clause being deleted. We reset the count when we have finished scanning
+the list.
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
 static void
 gcClauseList(ClauseList cl)
 { ClauseRef cref=cl->first_clause, prev = NULL;
@@ -1056,7 +1063,7 @@ gcClauseList(ClauseList cl)
 	  }
 	});
 
-  assert(cl->erased_clauses==0);
+  cl->erased_clauses = 0; /* see (*) */
 }
 
 
@@ -1619,6 +1626,16 @@ hashDefinition(ClauseList clist, hash_hints *hints, IndexContext ctx)
   ci = newClauseIndexTable(hints->args, hints, ctx);
   insertIndex(ctx->predicate, clist, ci);
   UNLOCKDEF(ctx->predicate);
+
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Adding a pause here creates  a window where other threads may mark clauses
+as erased (CL_ERASED).  This prevents them being added to the just-created
+index.
+
+See the test_cgc_1 test case in src/Tests/GC/test_cgc_1.pl
+
+  usleep(1000);
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
   for(cref = clist->first_clause; cref; cref = cref->next)
   { if ( false(cref->value.clause, CL_ERASED) )
